@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catatan Pengasuh</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f7f4f0;color:#3d3834;font-family:Arial,sans-serif}
+.app{max-width:560px;margin:auto;min-height:100vh;background:#fff;padding:20px 16px 90px}
+h1{font-size:25px;margin:0 0 4px}.sub{color:#857c75;font-size:14px;margin-bottom:20px}
+.card{background:#faf8f5;border:1px solid #eee7df;border-radius:16px;padding:16px;margin-bottom:14px}
+.date{font-weight:bold;font-size:17px}.status{display:flex;gap:10px;margin-top:12px}.timebox{flex:1;background:#fff;border-radius:12px;padding:10px;border:1px solid #eee7df}
+.label{font-size:12px;color:#8b8178}.time{font-weight:bold;margin-top:4px}
+button{border:0;border-radius:12px;padding:13px 16px;font-size:15px;font-weight:bold;cursor:pointer}
+.primary{background:#4d7165;color:white;width:100%;margin-top:12px}.secondary{background:#e9eee9;color:#38564d;width:100%;margin-top:8px}
+.row{display:flex;gap:10px}.row button{flex:1}
+select,input,textarea{width:100%;padding:12px;border:1px solid #ddd4cc;border-radius:10px;font-size:15px;margin-top:6px;background:#fff}
+textarea{min-height:80px;resize:vertical}.field{margin-top:12px}.field label{font-size:13px;font-weight:bold}
+.timeline{border-left:2px solid #ddd4cc;margin:14px 0 0 10px;padding-left:18px}
+.item{position:relative;padding:0 0 18px}.item:before{content:"";position:absolute;left:-25px;top:3px;width:10px;height:10px;border-radius:50%;background:#4d7165}
+.item .top{font-weight:bold}.item .desc{font-size:14px;color:#716861;margin-top:4px;line-height:1.4}
+.empty{text-align:center;color:#91877f;padding:20px 5px}
+.small{font-size:12px;color:#8b8178}.danger{background:#f3e1dd;color:#8a4034;padding:7px 10px;font-size:12px;margin-top:7px}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Catatan Pengasuh 👶</h1>
+  <div class="sub">Absensi & kegiatan anak hari ini</div>
+
+  <div class="card">
+    <div class="date" id="today"></div>
+    <div class="small">Pengasuh: <b id="caregiverName">Pengasuh</b></div>
+    <div class="status">
+      <div class="timebox"><div class="label">Absen masuk</div><div class="time" id="inTime">—</div></div>
+      <div class="timebox"><div class="label">Absen pulang</div><div class="time" id="outTime">—</div></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" onclick="attendance('in')">Absen Masuk</button>
+      <button class="secondary" onclick="attendance('out')">Absen Pulang</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>Tambah kegiatan</b>
+    <div class="field"><label>Jam</label><input type="time" id="activityTime"></div>
+    <div class="field"><label>Kegiatan</label>
+      <select id="activityType">
+        <option>🍼 Susu</option><option>🍚 Makan</option><option>😴 Tidur</option>
+        <option>🛁 Mandi</option><option>🧸 Bermain</option><option>💩 BAB/BAK</option>
+        <option>💊 Obat</option><option>📝 Lainnya</option>
+      </select>
+    </div>
+    <div class="field"><label>Deskripsi</label><textarea id="description" placeholder="Contoh: Minum susu 120 ml"></textarea></div>
+    <button class="primary" onclick="addActivity()">Simpan Kegiatan</button>
+  </div>
+
+  <div class="card">
+    <b>Kegiatan Hari Ini</b>
+    <div id="timeline" class="timeline"></div>
+  </div>
+</div>
+
+<script>
+const key = 'catatan_pengasuh_v1';
+const todayKey = new Date().toISOString().slice(0,10);
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzRlg--lnS0X9B5ytvp2ci7ZPPb6KNRNMupsHCxlA53u7Z7-ArOo22CYJGOYOzAAYae0g/exec'; // Ganti dengan URL Apps Script Anda
+
+document.getElementById('today').textContent = new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+document.getElementById('activityTime').value = new Date().toTimeString().slice(0,5);
+
+function load(){
+  const all=JSON.parse(localStorage.getItem(key)||'{}');
+  const d=all[todayKey]||{in:null,out:null,activities:[]};
+  document.getElementById('inTime').textContent=d.in||'—';
+  document.getElementById('outTime').textContent=d.out||'—';
+  const el=document.getElementById('timeline');
+  if(!d.activities.length){el.innerHTML='<div class="empty">Belum ada kegiatan hari ini.</div>';return}
+  el.innerHTML=d.activities.slice().sort((a,b)=>a.time.localeCompare(b.time)).map((a,i)=>
+    `<div class="item"><div class="top">${a.time} · ${a.type}</div><div class="desc">${escapeHtml(a.desc||'Tidak ada deskripsi')}</div>
+    <button class="danger" onclick="removeActivity(${i})">Hapus</button></div>`).join('');
+}
+
+function save(d){
+  const all=JSON.parse(localStorage.getItem(key)||'{}');
+  all[todayKey]=d;
+  localStorage.setItem(key,JSON.stringify(all));
+  load();
+}
+
+function sendToSheet(payload) {
+  if (WEB_APP_URL.includes('MASUKKAN_URL')) return;
+  fetch(WEB_APP_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(err => console.error('Gagal sinkronisasi:', err));
+}
+
+function attendance(type){
+  const all=JSON.parse(localStorage.getItem(key)||'{}');
+  const d=all[todayKey]||{in:null,out:null,activities:[]};
+  const currentTime = new Date().toTimeString().slice(0,5);
+  d[type]=currentTime;
+  save(d);
+  
+  sendToSheet({
+    tanggal: todayKey,
+    tipe: type === 'in' ? 'Absen Masuk' : 'Absen Pulang',
+    jam: currentTime,
+    kategori: '-',
+    deskripsi: 'Pengasuh melakukan ' + (type === 'in' ? 'absen masuk' : 'absen pulang')
+  });
+}
+
+function addActivity(){
+  const all=JSON.parse(localStorage.getItem(key)||'{}');
+  const d=all[todayKey]||{in:null,out:null,activities:[]};
+  const time=document.getElementById('activityTime').value, 
+        type=document.getElementById('activityType').value, 
+        desc=document.getElementById('description').value.trim();
+  
+  if(!time){alert('Jam belum diisi');return}
+  
+  d.activities.push({time,type,desc});
+  save(d);
+  document.getElementById('description').value='';
+  
+  sendToSheet({
+    tanggal: todayKey,
+    tipe: 'Kegiatan Anak',
+    jam: time,
+    kategori: type,
+    deskripsi: desc || 'Tidak ada deskripsi'
+  });
+}
+
+function removeActivity(index){
+  const all=JSON.parse(localStorage.getItem(key)||'{}');
+  const d=all[todayKey];if(!d)return;
+  const sorted=d.activities.slice().sort((a,b)=>a.time.localeCompare(b.time));
+  const target=sorted[index];
+  d.activities=d.activities.filter(x=>x!==target);
+  save(d);
+}
+
+function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+load();
+</script>
+</body>
+</html>
